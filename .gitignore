@@ -1,0 +1,3 @@
+# Ignore the figure directory
+qiskit_simulation/figs/
+
