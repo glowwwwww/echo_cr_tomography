@@ -8,7 +8,7 @@ import matplotlib.colors as colors
 from qiskit.providers.fake_provider import FakeAthens
 
 from hamiltonian_learning import Hamiltonian_Learning
-from preparation import rabi_xy, rabi_z, discrete_cmap
+from preparation import rabi_x, rabi_y, rabi_z, discrete_cmap
 
 def makepath(path):
     now = datetime.datetime.now()
@@ -26,8 +26,8 @@ def makefoler(path, folder):
         os.makedirs(complete_path)
     return complete_path
 
-iter_max = 20
-batch_size = 20
+iter_max = 8
+batch_size = 30
 
 
 t_max = 10*1e-7
@@ -39,17 +39,17 @@ ts = (np.linspace((4*sig)*dt, t_max, N_t)/dt).astype(int)
 ts = ts[1:]
 Us = [0, 1]
 Ms = [0, 1, 2]
-f_rabi = [rabi_xy, rabi_xy, rabi_z, rabi_xy, rabi_xy, rabi_z]
+f_rabi = [rabi_x, rabi_y, rabi_z, rabi_x, rabi_y, rabi_z]
 
 
-path = "C:\\Arbeit\\FakeAthenSimulation\\experiment_data\\echo\\c1t0_04amp_30sig_rr01_echo\\"
-fig_path = "C:\\Arbeit\\qiskit_simulation\\figs\\echo"
+path = "C:\\Arbeit\\MasterArbeit\\echo_cr_tomography\\FakeAthenSimulation\\experiment_data\\single\\c1t0_04amp_04sig\\"
+fig_path = "C:\\Arbeit\\MasterArbeit\\echo_cr_tomography\\qiskit_simulation\\adam_figs"
 fig_path = makepath(fig_path)
 raw_path = makefoler(fig_path, "rawdata")
 fit_path = makefoler(fig_path, "fitdata")
 
 
-lam_labels = np.array(["mu0", "A0", "B0", "mu1", "A1", "B1"])
+lam_labels = np.array(["mu0", "a0", "b0", "phi0", "mu1", "a1", "b1", "phi1"])
 rabi_labels = np.array(["p_x", "p_y", "p_z", "p_x", "p_y", "p_z"])
 U_label= [r"$(U_0, X)$",r"$(U_0, Y)$",r"$(U_0, Z)$",r"$(U_1, X)$",r"$(U_1, Y)$",r"$(U_1, Z)$"]
 fake_UM = np.arange(6)
@@ -117,18 +117,17 @@ for n_iter in range(iter_max):
         plt.savefig(os.path.join(raw_path, "raw_rabi_U{1}_M{2}_L{0}.jpg".format(n_iter, i//3, i%3)))
         plt.close(fig)
     
-    params = np.array(algorithm.fit_params(method="L-BFGS-B"))
+    params = np.array(algorithm.fit_params(method="L-BFGS-B", with_f=True))
     # params = np.array(algorithm.fit_params(method="curve"))
-
     for i in range(len(exp_list)):
         n_rabi = i%3
         t = exp_list[i]["t"]*dt
         p = exp_list[i]["count"]
         if i//3 == 0:
-            lam = params[i,:4]
+            lam = params[:4]
         if i//3 == 1:
-            lam = params[i,4:]
-        p_pred = f_rabi[n_rabi](ts*dt, *lam)
+            lam = params[4:]
+        p_pred = f_rabi[n_rabi](ts*dt, lam)
         # if n_rabi == 0:
         fig = plt.figure()
         plt.plot(t*1e9, p , ".")
@@ -142,7 +141,7 @@ for n_iter in range(iter_max):
     
     # loss_hist.append(loss)
 
-    algorithm.optimize_query(lr=5)
+    algorithm.optimize_query(lr=1)
     
     p_q_update = algorithm.get_p_q_update()
     
@@ -157,8 +156,8 @@ for n_iter in range(iter_max):
     plt.savefig(os.path.join(fig_path, "diff_q_L{0}.jpg".format(n_iter)))
     plt.close(fig)
     
-    
-loss_hist = algorithm.get_loss()
+print(algorithm.get_adam())
+loss_hist = np.array(algorithm.get_loss())
 
 mean_loss = np.array([np.mean(loss_hist[i]) for i in range(len(loss_hist))])    
 sig_loss  = np.array([np.std(loss_hist[i], ddof=1) for i in range(len(loss_hist))])
@@ -186,15 +185,16 @@ plt.close(fig)
 print(mean_loss)
 # print(loss_hist)
 
-full_loss = 0.004988609002410701
+# full_loss = 0.004988609002410701
 # full_loss_0_3 = 0.02839245117263177
 # full_loss_0_1 = 0.007424841133476666
 # full_loss_0_01= 0.005003211876139741
 # n_total = 600/batch_size
 fig = plt.figure()
 plt.plot(nr_data, mean_loss, ".-", label="active learning")
-plt.hlines(full_loss, 0, n_iter, linestyles="dashed", label="full tomography")
+# plt.hlines(full_loss, 0, n_iter, linestyles="dashed", label="full tomography")
 plt.yscale("log")
+# plt.xscale("log")
 plt.grid()
 plt.xlabel(r"$n_{{iter}}$")
 plt.fill_between(nr_data, mean_loss - sig_loss/2, mean_loss + sig_loss/2, alpha=0.2, label=r"$1-\sigma$ interval")
@@ -204,5 +204,3 @@ plt.savefig(os.path.join(fig_path, "mean_log.jpg"))
 plt.close(fig)
 print(mean_loss)
 # print(loss_hist)
-
-

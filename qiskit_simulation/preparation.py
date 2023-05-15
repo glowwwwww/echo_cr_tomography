@@ -10,43 +10,78 @@ from scipy.signal import find_peaks
 from scipy.stats import rv_discrete
 from matplotlib import pyplot as plt
 from numpy.random import default_rng
+import numdifftools as nd
 
+# z,y,x
 
 U_label= [r"$(U_0, X)$",r"$(U_0, Y)$",r"$(U_0, Z)$",r"$(U_1, X)$",r"$(U_1, Y)$",r"$(U_1, Z)$"]
 
-def rabi_xy(t, mu, A, B, C):
-    return A*np.cos(2*mu*t)+B*np.sin(2*mu*t)-A
+def rabi_x(t, lam0):
+    mu  = lam0[0]*1e6
+    a   = lam0[1]*1e6
+    b   = lam0[2]*1e6
+    phi = lam0[3]
+    return -a*b/mu**2*np.cos(phi)*(1-np.cos(2*mu*t))-b/mu*np.sin(phi)*np.sin(2*mu*t)
+
+def rabi_y(t, lam0):
+    mu  = lam0[0]*1e6
+    a   = lam0[1]*1e6
+    b   = lam0[2]*1e6
+    phi = lam0[3]
+    return -a*b/mu**2*np.sin(phi)*(1-np.cos(2*mu*t))-b/mu*np.cos(phi)*np.sin(2*mu*t)
+
+def rabi_z(t, lam0):
+    mu  = lam0[0]*1e6
+    b   = lam0[2]*1e6
+    return (1-b**2/mu**2)+b**2/mu**2*np.cos(2*mu*t)
 
 
-def rabi_z(t, mu, A, B, C):
-    return A*np.cos(2*mu*t)+(1-A)
+def rabi_xt(lam0):
+    t   = lam0[0]
+    mu  = lam0[1]*1e6
+    a   = lam0[2]*1e6
+    b   = lam0[3]*1e6
+    phi = lam0[4]
+    return -a*b/mu**2*np.cos(phi)*(1-np.cos(2*mu*t))-b/mu*np.sin(phi)*np.sin(2*mu*t)
 
-def grad_lam(t, mu, A, B, C, n_rabi):
-    if n_rabi !=2:
-        dmu = -2*A*t*np.sin(2*mu*t)+2*B*t*np.cos(2*mu*t)
-        dA = np.cos(2*mu*t)-1
-        dB = np.sin(2*mu*t)
-        dC = 0
-    else:
-        dmu = -2*A*t*np.sin(2*mu*t)
-        dA = np.cos(2*mu*t)-1
-        dB = 0
-        dC = 0
-    return dmu, dA, dB, dC
+def rabi_yt(lam0):
+    t   = lam0[0]
+    mu  = lam0[1]*1e6
+    a   = lam0[2]*1e6
+    b   = lam0[3]*1e6
+    phi = lam0[4]
+    return -a*b/mu**2*np.sin(phi)*(1-np.cos(2*mu*t))-b/mu*np.cos(phi)*np.sin(2*mu*t)
 
-def gradient_rabi(t, mu0, A0, B0, C0, mu1, A1, B1, C1, n_data):
+def rabi_zt(lam0):
+    t   = lam0[0]
+    mu  = lam0[1]*1e6
+    a   = lam0[2]*1e6
+    b   = lam0[3]*1e6
+    phi = lam0[4]
+    return (a**2/mu**2)+b**2/mu**2*np.cos(2*mu*t)+phi*0
+
+def grad_lam(t, mu, a, b, phi, n_data):
+    n_rabi = n_data%3
+    if n_rabi ==0:
+        return  nd.Jacobian(rabi_xt)([t, mu, a, b, phi])
+    elif n_rabi ==1:
+        return  nd.Jacobian(rabi_yt)([t, mu, a, b, phi])
+    elif n_rabi == 2:
+        return  nd.Jacobian(rabi_zt)([t, mu, a, b, phi])
+
+def gradient_rabi(t, mu0, a0, b0, phi0, mu1, a1, b1, phi1, n_data):
     n_rabi = n_data%3
     if n_data//3==0:
-        dmu, dA, dB, dC = grad_lam(t, mu0, A0, B0, C0, n_rabi)
-        return np.array([dmu, dA, dB, dC, 0, 0, 0, 0])
+        dlam = np.array([grad_lam(t, mu0, a0, b0, phi0, n_rabi)])
+        dlam = np.array(dlam[0][0])
+        return np.array([*dlam, 0, 0, 0, 0])
     elif n_data//3==1:
-        dmu, dA, dB, dC = grad_lam(t, mu1, A1, B1, C1, n_rabi)
-        return np.array([0, 0, 0, 0, dmu, dA, dB, dC])
-
+        dlam = np.array([grad_lam(t, mu1, a1, b1, phi1, n_rabi)])
+        dlam = np.array(dlam[0][0])
+        return np.array([0, 0, 0, 0, *dlam])
 
 def loss_optimizer(lam, t, p, func):
     return np.sum((p-func(t, *lam))**2)/len(t)
-
 
 
 """

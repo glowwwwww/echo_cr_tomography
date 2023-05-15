@@ -8,7 +8,7 @@ import matplotlib.colors as colors
 from qiskit.providers.fake_provider import FakeAthens
 
 from hamiltonian_learning import Hamiltonian_Learning
-from preparation import rabi_xy, rabi_z, discrete_cmap
+from preparation import rabi_x, rabi_y, rabi_z, discrete_cmap
 
 def makepath(path):
     now = datetime.datetime.now()
@@ -36,15 +36,15 @@ ts = (np.linspace((4*sig)*dt, t_max, N_t)/dt).astype(int)
 ts = ts[1:]
 Us = [0, 1]
 Ms = [0, 1, 2]
-f_rabi = [rabi_xy, rabi_xy, rabi_z, rabi_xy, rabi_xy, rabi_z]
+f_rabi = [rabi_x, rabi_y, rabi_z, rabi_x, rabi_y, rabi_z]
 
 
-path = "C:\\Arbeit\\FakeAthenSimulation\\experiment_data\\echo\\c1t0_03amp_30sig_rr01_echo\\"
+path = "C:\\Arbeit\\MasterArbeit\\echo_cr_tomography\\FakeAthenSimulation\\experiment_data\\single\\c1t0_04amp_04sig\\"
 fig_path = "C:\\Arbeit\\qiskit_simulation\\full_tomo_figs"
-# fig_path = makepath(fig_path)
+fig_path = makepath(fig_path)
 
 
-lam_labels = np.array(["mu0", "A0", "B0", "mu1", "A1", "B1"])
+lam_labels = np.array(["mu0", "a0", "b0", "phi0", "mu1", "a1", "b1", "phi1"])
 rabi_labels = np.array(["p_x", "p_y", "p_z", "p_x", "p_y", "p_z"])
 U_label= [r"$(U_0, X)$",r"$(U_0, Y)$",r"$(U_0, Z)$",r"$(U_1, X)$",r"$(U_1, Y)$",r"$(U_1, Z)$"]
 fake_UM = np.arange(6)
@@ -66,21 +66,21 @@ for n_i in range(N_iter):
         plt.savefig(os.path.join(fig_path, "raw_rabi_U{0}_M{1}.jpg".format(i//3, i%3)))
         plt.close(fig)
 
-    params = np.array(algorithm.fit_params(method="L-BFGS-B"))
+    params = algorithm.fit_params(method="L-BFGS-B", with_f=True)
 
     # params = np.array(algorithm.fit_params(method="COBYLA"))
 
 
-
+    print(params)
     for i in range(len(exp_list)):
         n_rabi = i%3
         t = exp_list[i]["t"]*dt
         p = exp_list[i]["count"]
         if i//3 == 0:
-            lam = params[i,:4]
+            lam = params[:4]
         if i//3 == 1:
-            lam = params[i,4:]
-        p_pred = f_rabi[n_rabi](ts*dt, *lam)
+            lam = params[4:]
+        p_pred = f_rabi[n_rabi](ts*dt, lam)
         # if n_rabi == 0:
         fig = plt.figure()
         plt.plot(t*1e9, p , ".")

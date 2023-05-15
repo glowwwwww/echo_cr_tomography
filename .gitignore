@@ -1,3 +1,4 @@
 # Ignore the figure directory
 qiskit_simulation/figs/
-
+figs/
+qiskit_simulation/adam_figs/

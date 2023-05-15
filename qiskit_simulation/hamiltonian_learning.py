@@ -13,9 +13,9 @@ from qiskit.providers.fake_provider import FakeAthens
 
 from variable_quantum_circuit import Variable_Quantum_Circuit
 from rabi_fit import Rabi_Fit
-from preparation import gradient_rabi, rabi_xy, rabi_z
+from preparation import gradient_rabi, rabi_x,rabi_y, rabi_z
 
-lam_labels = np.array(["mu0", "A0", "B0", "C0", "mu1", "A1", "B1", "C1"])
+lam_labels = np.array(["mu0", "a0", "b0", "phi0", "mu1", "a1", "b1", "phi1"])
 
 
 class Hamiltonian_Learning():
@@ -33,10 +33,12 @@ class Hamiltonian_Learning():
         self.f_rabi = f_rabi
         self.exp_data = None
         self.params = []
-        self.params_n = np.zeros((6,8))
+        self.params_n = np.zeros(8)
+        self.adam_params = np.zeros(6)
         self.loss = []
         self.loss_n = np.zeros(6)
         self.n_iter = -1
+        self.is_all_fit = False
         self._init_query_dim(ts, Us, Ms)
         self._init_q(ts, Us, Ms)
         self._init_backend_params(backend)
@@ -99,9 +101,9 @@ class Hamiltonian_Learning():
     def set_params(self, params):
         self.params = params    
           
-    def set_loss(self, loss):
-        self.loss = loss
-    
+    def add_loss(self, loss):
+        self.loss.append(loss)
+            
     def set_loss_n(self, loss_n):
         self.loss_n = loss_n
         
@@ -113,6 +115,9 @@ class Hamiltonian_Learning():
         
     def set_q_sample(self, q_sample):
         self.q_sample = q_sample
+
+    def set_adam(self, adams_par):
+        self.adam_params = adams_par
 
     def get_p_q(self):
         return self.p_q
@@ -159,6 +164,9 @@ class Hamiltonian_Learning():
     def get_p_q_update(self):
         return self.p_q_update
     
+    def get_adam(self):
+        return self.adam_params
+    
     def _update_params(self, params, n):
         params_n = self.get_params_n()
         params_n[n,:] = params
@@ -180,6 +188,10 @@ class Hamiltonian_Learning():
             loss_hist.append(loss_n)
             self.set_loss(loss_hist)
             self.set_loss_n(np.zeros(6))
+            
+    def _update_adam(self, adam_result):
+        self.adam_params = adam_result
+        
 
     def set_data(self, data):
         self.exp_data = data
@@ -238,10 +250,10 @@ class Hamiltonian_Learning():
         return n_data_list
 
 
-    def _set_data_params(self, lam, n):
+    def set_lam_to_data(self, lam):
         data = self.get_data()
         for i in range(self.dim_lam):
-            data.loc[data["UM"]==self.UM_labels[n], lam_labels[i]] = lam[i]
+            data[lam_labels[i]] = lam[i]
         self.set_data(data)
 
 
@@ -272,16 +284,11 @@ class Hamiltonian_Learning():
     def _query_fisher_info(self, df):
         n_data = self.get_n_data(df["UM"])
         lam = np.real(df[lam_labels].to_numpy())
-        p_i = np.real(df["count"])
         dx_i = gradient_rabi(np.real(df["t"]*self.dt), *lam, n_data)
         fi_x = np.zeros((self.dim_lam, self.dim_lam))
         for i in range(self.dim_lam):
             for j in range(self.dim_lam):
                 fi_x[i,j] = dx_i[i]*dx_i[j]
-        if (1-p_i**2) <= 0:
-            fi_x = fi_x/1e-6
-        else:          
-            fi_x = fi_x/(1-p_i**2)
         return fi_x
 
     def _batch_fisher_info(self):
@@ -291,7 +298,7 @@ class Hamiltonian_Learning():
             fi_x = self._query_fisher_info(data_row)
             fi_q[:,:,i] = fi_x
         return fi_q
-      
+    
         
     def _minimize_fisher_info(self):
         fi_q = self._batch_fisher_info()
@@ -300,6 +307,7 @@ class Hamiltonian_Learning():
         w_opt = np.abs(res.x+np.min(res.x))
         w_opt = w_opt/np.sum(w_opt)
         return w_opt
+    
 
     def mix_p_q(self, lr):
         n_batch = self.n_batch
@@ -404,25 +412,35 @@ class Hamiltonian_Learning():
         self.exp_data = self.set_data(data_filtered)
         
 
-    def fit_params(self, method):
+    def fit_params(self, method, with_f=False):
         dt = self.dt
         data = self.get_data()
+        adam_pars = self.get_adam()    
         UM_labels = self.UM_labels
         f_rabi = self.f_rabi
         t_max = self.t_max*dt
-
+        n_iter =  self.get_n_iter()
+        
+        if n_iter>0:
+            params0 = np.delete(adam_pars, [0,4])
+        else:
+            params0 = None
+        
         sorted_data = self._reform_data(data, UM_labels)
         
-        theory_model = Rabi_Fit(t_max, dt, sorted_data, f_rabi)
-        results = []
-        for n in range(self.dim_UM):
-            # print("Fitting Rabi Set Nr. {}".format(n))
-            result = theory_model.fit_params(n, method)
-            results.append(result[0])
-            self._update_params(result[0], n)
-            self._update_loss(result[1], n)
-            self._set_data_params(result[0], n)
-        return results
+        theory_model = Rabi_Fit(t_max, dt, sorted_data, f_rabi, adam_pars)
+        prams, loss = theory_model.fit_params(method, params0)
+        if np.sum(theory_model.is_initial)==0:
+            adam_results, loss = theory_model.adam(prams, with_f=with_f)
+            self.set_adam(adam_results)
+        else:
+            adam_results = np.array([1, 1, 1, 0, 1, 1, 1, 0])
+            loss = np.delete(loss, [1,5])
+            self.set_adam(adam_results)
+            print(loss)
+        self.add_loss(loss)
+        self.set_lam_to_data(adam_results)
+        return adam_results
 
 
     def optimize_query(self, lr):
